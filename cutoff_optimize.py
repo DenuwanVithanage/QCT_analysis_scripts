@@ -97,8 +97,6 @@ def main():
     ap.add_argument("--step", type=float)
     ap.add_argument("--decimals", type=int, default=3)
     ap.add_argument("--outdir")
-    ap.add_argument("--energy", required=True, help="Energy label for output filenames, e.g. 577")
-    ap.add_argument("--initial-state", required=True, help="Initial state label for output filenames, e.g. v1j0")
 
     args = ap.parse_args()
 
@@ -121,9 +119,13 @@ def main():
             "jf_peak_qct\tjf_peak_q\tN_common\tqct_file\n"
         )
 
+    quantum_stem = Path(args.quantum).stem
+
+
+
     for i, n in enumerate(cutoffs, 1):
         cutoff = f"{n:.{args.decimals}f}"
-        qct_out = outdir / f"e{args.energy}_v{args.initial_state}_dv{args.dv}_{cutoff}sig.cbt"
+        qct_out = outdir / f"{quantum_stem}_{cutoff}sig.cbt"
 
         cmd = [
             args.binnew,
