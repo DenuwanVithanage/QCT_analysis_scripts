@@ -97,6 +97,8 @@ def main():
     ap.add_argument("--step", type=float)
     ap.add_argument("--decimals", type=int, default=3)
     ap.add_argument("--outdir")
+    ap.add_argument("--energy", required=True, help="Energy label for output filenames, e.g. 577")
+    ap.add_argument("--initial-state", required=True, help="Initial state label for output filenames, e.g. v1j0")
 
     args = ap.parse_args()
 
@@ -121,7 +123,7 @@ def main():
 
     for i, n in enumerate(cutoffs, 1):
         cutoff = f"{n:.{args.decimals}f}"
-        qct_out = outdir / f"e577_v1j0_dv-1_{cutoff}sig.nt"
+        qct_out = outdir / f"e{args.energy}_v{args.initial_state}_dv{args.dv}_{cutoff}sig.cbt"
 
         cmd = [
             args.binnew,
