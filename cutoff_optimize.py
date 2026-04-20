@@ -29,27 +29,34 @@ def calc_metrics(qct, q):
     common = sorted(set(qct) & set(q))
     N = len(common)
 
+    if N == 0:
+        return None
+
     sum_qct = sum(qct[j] for j in common)
     sum_q   = sum(q[j]   for j in common)
+
+    if sum_q == 0:
+        return None
+
     dInt = (sum_qct - sum_q) / sum_q
 
     sse = 0.0
     sae = 0.0
     for j in common:
         d = qct[j] - q[j]
-        sse += d*d
+        sse += d * d
         sae += abs(d)
 
     rmse_abs = math.sqrt(sse / N)
     l1_abs   = sae / N
 
     qmax = max(q[j] for j in common)
-    eps  = 1e-3 * qmax
+    eps  = 1e-3 * qmax if qmax > 0 else 1e-30
     sse_rel = sum(((qct[j] - q[j]) / (q[j] + eps))**2 for j in common)
     rmse_rel = math.sqrt(sse_rel / N)
 
-    jf_peak_q    = max(common, key=lambda j: q[j])
-    jf_peak_qct  = max(common, key=lambda j: qct[j])
+    jf_peak_q   = max(common, key=lambda j: q[j])
+    jf_peak_qct = max(common, key=lambda j: qct[j])
 
     return {
         "dInt": dInt,
@@ -60,7 +67,7 @@ def calc_metrics(qct, q):
         "sum_q": sum_q,
         "peak_q": q[jf_peak_q],
         "peak_qct": qct[jf_peak_qct],
-        "peak_ratio": qct[jf_peak_qct] / q[jf_peak_q],
+        "peak_ratio": qct[jf_peak_qct] / q[jf_peak_q] if q[jf_peak_q] != 0 else float("nan"),
         "jf_peak_q": jf_peak_q,
         "jf_peak_qct": jf_peak_qct,
         "N_common": N
@@ -104,6 +111,7 @@ def main():
     outdir.mkdir(parents=True, exist_ok=True)
 
     quantum = read_quantum(Path(args.quantum))
+    quantum_stem = Path(args.quantum).stem
 
     cutoffs = (
         frange(args.sigma_min, args.sigma_max, args.step)
@@ -112,6 +120,8 @@ def main():
     )
 
     summary = outdir / "summary.tsv"
+    skiplog = outdir / "skipped.log"
+
     with summary.open("w") as f:
         f.write(
             "# cutoff_sigma\tdInt\tRMSE_abs\tRMSE_rel\tL1_abs\t"
@@ -119,13 +129,12 @@ def main():
             "jf_peak_qct\tjf_peak_q\tN_common\tqct_file\n"
         )
 
-    quantum_stem = Path(args.quantum).stem
-
-
+    with skiplog.open("w") as f:
+        f.write("# cutoff_sigma\treason\n")
 
     for i, n in enumerate(cutoffs, 1):
         cutoff = f"{n:.{args.decimals}f}"
-        qct_out = outdir / f"{quantum_stem}_{cutoff}sig.cbt"
+        qct_out = outdir / f"{quantum_stem}_{cutoff}sig.nt"
 
         cmd = [
             args.binnew,
@@ -138,25 +147,39 @@ def main():
         ]
 
         print(f"[{i}/{len(cutoffs)}] σ={cutoff}")
-        with qct_out.open("w") as f:
-            subprocess.run(cmd, stdout=f, check=True)
+        try:
+            with qct_out.open("w") as f:
+                subprocess.run(cmd, stdout=f, check=True)
 
-        qct = read_qct(qct_out)
-        m = calc_metrics(qct, quantum)
+            qct = read_qct(qct_out)
+            m = calc_metrics(qct, quantum)
 
-        with summary.open("a") as f:
-            f.write(
-                f"{cutoff}\t{m['dInt']:.6g}\t{m['RMSE_abs']:.6g}\t"
-                f"{m['RMSE_rel']:.6g}\t{m['L1_abs']:.6g}\t"
-                f"{m['sum_qct']:.6g}\t{m['sum_q']:.6g}\t"
-                f"{m['peak_qct']:.6g}\t{m['peak_q']:.6g}\t"
-                f"{m['peak_ratio']:.6g}\t"
-                f"{m['jf_peak_qct']}\t{m['jf_peak_q']}\t"
-                f"{m['N_common']}\t{qct_out.name}\n"
-            )
+            if m is None:
+                reason = "no valid comparison (sum_q=0 or no common jf)"
+                print(f"  Skipping cutoff {cutoff}: {reason}")
+                with skiplog.open("a") as f:
+                    f.write(f"{cutoff}\t{reason}\n")
+                continue
+
+            with summary.open("a") as f:
+                f.write(
+                    f"{cutoff}\t{m['dInt']:.6g}\t{m['RMSE_abs']:.6g}\t"
+                    f"{m['RMSE_rel']:.6g}\t{m['L1_abs']:.6g}\t"
+                    f"{m['sum_qct']:.6g}\t{m['sum_q']:.6g}\t"
+                    f"{m['peak_qct']:.6g}\t{m['peak_q']:.6g}\t"
+                    f"{m['peak_ratio']:.6g}\t"
+                    f"{m['jf_peak_qct']}\t{m['jf_peak_q']}\t"
+                    f"{m['N_common']}\t{qct_out.name}\n"
+                )
+
+        except Exception as e:
+            print(f"  Skipping cutoff {cutoff}: {e}")
+            with skiplog.open("a") as f:
+                f.write(f"{cutoff}\t{e}\n")
+            continue
 
     print(f"\nDone. Summary → {summary}")
+    print(f"Skipped cases → {skiplog}")
 
 if __name__ == "__main__":
     main()
-
